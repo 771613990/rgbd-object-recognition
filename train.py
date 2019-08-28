@@ -7,12 +7,10 @@ import os
 import sys
 from tqdm import tqdm
 import utils.tfrecord_utils as tfrecord_utils
-from timeit import default_timer as timer
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, 'pointnet'))
-#sys.path.append(os.path.join(BASE_DIR, 'utils'))
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, default=0, help='GPU to use [default: GPU 0]')
@@ -112,10 +110,10 @@ def train():
         tfdataset = tfdataset.map(tfrecord_utils.tfexample_to_paths)
 
         # Load data
-        point_cloud_size = 2048
         tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth_and_create_point_cloud_data_rnd,
-            [a['pcd_path'], a['img_path'], a['loc_path'], b['name'], b['int'], point_cloud_size],
-            [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
+                                                          [a['pcd_path'], a['img_path'], a['loc_path'], b['name'],
+                                                           b['int'], NUM_POINT],
+                                                          [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
 
         # Transformations
         tfdataset = tfdataset.batch(batch_size=BATCH_SIZE, drop_remainder=True)
@@ -132,8 +130,7 @@ def train():
         #######################################################################
 
         with tf.device('/gpu:' + str(GPU_INDEX)):
-            #pointclouds_pl, labels_pl = MODEL.placeholder_inputs(BATCH_SIZE, NUM_POINT)
-            is_training_pl = tf.placeholder(tf.bool, shape=())
+            is_training_pl = tf.Variable(True, trainable=False, dtype=tf.bool)
 
             # Note the global_step=batch parameter to minimize.
             # That tells the optimizer to helpfully increment the 'batch' parameter for you every time it trains.
@@ -179,11 +176,10 @@ def train():
         test_writer = tf.summary.FileWriter(os.path.join(LOG_DIR, 'test'))
 
         # Init variables
-        init = tf.global_variables_initializer()
-        sess.run(init, {is_training_pl: True})
+        sess.run(tf.global_variables_initializer())
 
         # Restore?
-        saver.restore(sess, tf.train.latest_checkpoint('log'))
+        #saver.restore(sess, tf.train.latest_checkpoint('log'))
 
         ops = {'is_training_pl': is_training_pl, 'pred': pred,
                'loss': loss, 'train_op': train_op, 'merged': merged, 'step': batch,
@@ -218,15 +214,16 @@ def train_one_epoch(sess, ops, train_writer, data_iterator, tfrecord_filepaths_t
     # Reset train data
     sess.run(data_iterator.initializer, feed_dict={tfrecord_filepaths_placeholder: tfrecord_filepaths_train})
 
+    # Set trainable weights
+    sess.run(ops['is_training_pl'].assign(True))
+
     pbar = tqdm(desc='', unit='tick')
     try:
         while True:
 
             # Train it
-            feed_dict = {ops['is_training_pl']: is_training}
             summary, step, _, loss_val, pred_val, current_label = sess.run(
-                [ops['merged'], ops['step'], ops['train_op'], ops['loss'], ops['pred'], ops['data_y_int']],
-                feed_dict=feed_dict)
+                [ops['merged'], ops['step'], ops['train_op'], ops['loss'], ops['pred'], ops['data_y_int']])
 
             # Some acc calulation
             train_writer.add_summary(summary, step)
@@ -246,6 +243,7 @@ def train_one_epoch(sess, ops, train_writer, data_iterator, tfrecord_filepaths_t
         pass
     pbar.close()
 
+
 def eval_one_epoch(sess, ops, test_writer, data_iterator, tfrecord_filepaths_test, tfrecord_filepaths_placeholder):
     """ ops: dict mapping from string to tf ops """
     is_training = False
@@ -258,15 +256,16 @@ def eval_one_epoch(sess, ops, test_writer, data_iterator, tfrecord_filepaths_tes
     # Reset train data
     sess.run(data_iterator.initializer, feed_dict={tfrecord_filepaths_placeholder: tfrecord_filepaths_test})
 
+    # Unset trainable weights
+    sess.run(ops['is_training_pl'].assign(False))
+
     pbar = tqdm(desc='', unit='tick')
     try:
         while True:
 
             # Train it
-            feed_dict = {ops['is_training_pl']: is_training}
             summary, step, loss_val, pred_val, current_label = sess.run(
-                [ops['merged'], ops['step'], ops['loss'], ops['pred'], ops['data_y_int']],
-                feed_dict=feed_dict)
+                [ops['merged'], ops['step'], ops['loss'], ops['pred'], ops['data_y_int']])
 
             # Some acc calulation
             pred_val = np.argmax(pred_val, 1)

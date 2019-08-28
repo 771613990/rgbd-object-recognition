@@ -105,8 +105,9 @@ def create_point_cloud(depth_image, crop_top_left_corner=None, color_image=None)
     # Assign color to point cloud
     if color_image is not None:
         point_cloud[..., 3:] = cv2.cvtColor(color_image, cv2.COLOR_BGR2RGB).astype(np.float32) / 255
-    # Cut off to far points
-    point_cloud[point_cloud[..., 2] > 2.5] = np.nan
+    # Cut off to far points & nan handling
+    point_cloud[point_cloud[..., 2] > 2.5] = 0.0
+    point_cloud = np.nan_to_num(point_cloud)
     return point_cloud.reshape(-1, 3)
 
 
@@ -117,7 +118,8 @@ def load_depth_and_create_point_cloud_data_rnd(pcd_filepath, img_filepath, loc_f
     # Load depth and convert to float32
     depth = cv2.imread(pcd_filepath.decode('utf-8'), cv2.IMREAD_ANYDEPTH)
     depth = depth.astype(np.float32)
-    depth[depth == 0] = np.nan
+    # NaN handling
+    depth[depth == 0] = np.nan     # what to do with nan depth?
     # Create point cloud
     point_cloud = create_point_cloud(depth, loc)
     # Sample point cloud
