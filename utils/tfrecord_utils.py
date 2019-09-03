@@ -106,8 +106,8 @@ def create_point_cloud(depth_image, crop_top_left_corner=None, color_image=None)
     if color_image is not None:
         point_cloud[..., 3:] = cv2.cvtColor(color_image, cv2.COLOR_BGR2RGB).astype(np.float32) / 255
     # Cut off to far points & nan handling
-    point_cloud[point_cloud[..., 2] > 2.5] = 0.0
-    point_cloud = np.nan_to_num(point_cloud)
+    point_cloud[point_cloud[..., 2] > 2.5] = np.nan
+#    point_cloud = np.nan_to_num(point_cloud)
     return point_cloud.reshape(-1, 3)
 
 
@@ -118,10 +118,10 @@ def load_depth_and_create_point_cloud_data_rnd(pcd_filepath, img_filepath, loc_f
     # Load depth and convert to float32
     depth = cv2.imread(pcd_filepath.decode('utf-8'), cv2.IMREAD_ANYDEPTH)
     depth = depth.astype(np.float32)
-    # NaN handling
-    depth[depth == 0] = np.nan     # what to do with nan depth?
     # Create point cloud
     point_cloud = create_point_cloud(depth, loc)
+    # Erase rows with NaNs
+    point_cloud = point_cloud[~np.isnan(point_cloud).any(axis=1)]
     # Sample point cloud
     if len(point_cloud) > point_cloud_size:
         indices = np.random.choice(len(point_cloud), point_cloud_size)
@@ -132,6 +132,64 @@ def load_depth_and_create_point_cloud_data_rnd(pcd_filepath, img_filepath, loc_f
     # Return
     return point_cloud, img_filepath, loc_filepath, y_name, y_int
 
+def _shuffle_points(point_cloud):
+        """
+        Shuffle points in point cloud and return its random permutation.
+        Args:
+            point_cloud (numpy.ndarray of size [N,3]): point clouds data to be shuffled along first axis
+        Returns:
+            (numpy.ndarray of size [N,3]): shuffled point cloud
+        """
+        idx = np.arange(point_cloud.shape[0])
+        np.random.shuffle(idx)
+        return point_cloud[idx, ...]
+
+def _subtract_the_mean(point_cloud):
+        """
+        Subtract the mean in point cloud and return its zero-mean version.
+        Args:
+            point_cloud (numpy.ndarray of size [N,3]): point cloud
+        Returns:
+            (numpy.ndarray of size [N,3]): point cloud with zero-mean
+        """
+        point_cloud = point_cloud - np.mean(point_cloud, axis=0)
+        return point_cloud
+
+def _jitter_points(point_cloud, sigma=0.001, clip=0.005):
+        """
+        Randomly jitter points
+
+        Args:
+            point_cloud (np.ndarray of size [N, 3]): Point cloud
+            sigma (float): Sigma value of gaussian noise to be applied pointwise.
+            clip (float): Clipping value of gaussian noise.
+        Returns:
+              (np.ndarray of size [N, 3]): Jittered point cloud data. 
+        """
+        # Get size
+        N, C = point_cloud.shape
+        
+        # Generate noise
+        if clip <= 0:
+            raise excpt.ValueError("Clip should be a positive number")
+        jittered_data = np.clip(sigma * np.random.randn(N, C), -1 * clip, clip)
+        
+        # Add to pointcloud
+        point_cloud += jittered_data
+        return point_cloud
+
+def augment_point_cloud(point_cloud, img_filepath, loc_filepath, y_name, y_int, permute_points=True, jitter_points=True, subtract_the_mean=True):
+    # Permute points
+    if permute_points:
+        point_cloud = _shuffle_points(point_cloud)
+    # Jitter points
+    if jitter_points:
+        point_cloud = _jitter_points(point_cloud)
+    # Jitter points
+    if subtract_the_mean:
+        point_cloud = _subtract_the_mean(point_cloud)
+    # Return
+    return point_cloud, img_filepath, loc_filepath, y_name, y_int
 
 def wrap_int64(value):
     return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))

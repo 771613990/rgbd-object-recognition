@@ -6,6 +6,7 @@ import importlib
 import os
 import sys
 from tqdm import tqdm
+from timeit import default_timer as timer
 import utils.tfrecord_utils as tfrecord_utils
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -18,7 +19,7 @@ parser.add_argument('--model', default='pointnet_cls_basic', help='Model name: p
                                                                   'default: pointnet_cls]')
 parser.add_argument('--log_dir', default='log', help='Log dir [default: log]')
 parser.add_argument('--num_point', type=int, default=1024, help='Point Number [256/512/1024/2048] [default: 1024]')
-parser.add_argument('--max_epoch', type=int, default=10, help='Epoch to run [default: 250]')
+parser.add_argument('--max_epoch', type=int, default=100, help='Epoch to run [default: 100]')
 parser.add_argument('--batch_size', type=int, default=32, help='Batch Size during training [default: 32]')
 parser.add_argument('--learning_rate', type=float, default=0.001, help='Initial learning rate [default: 0.001]')
 parser.add_argument('--momentum', type=float, default=0.9, help='Initial learning rate [default: 0.9]')
@@ -113,6 +114,11 @@ def train():
         tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth_and_create_point_cloud_data_rnd,
                                                           [a['pcd_path'], a['img_path'], a['loc_path'], b['name'],
                                                            b['int'], NUM_POINT],
+                                                          [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
+
+	# Augmentation
+        tfdataset = tfdataset.map(lambda a, b, c, d, e: tf.py_func(tfrecord_utils.augment_point_cloud,
+                                                          [a, b, c, d, e, False, False, False],
                                                           [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
 
         # Transformations
@@ -222,8 +228,10 @@ def train_one_epoch(sess, ops, train_writer, data_iterator, tfrecord_filepaths_t
         while True:
 
             # Train it
+            batch_train_start = timer()
             summary, step, _, loss_val, pred_val, current_label = sess.run(
                 [ops['merged'], ops['step'], ops['train_op'], ops['loss'], ops['pred'], ops['data_y_int']])
+            batch_train_end = timer()
 
             # Some acc calulation
             train_writer.add_summary(summary, step)
@@ -234,8 +242,8 @@ def train_one_epoch(sess, ops, train_writer, data_iterator, tfrecord_filepaths_t
             loss_sum += loss_val
 
             # Log info
-            pbar.set_description('Mean train accuracy: {:.4f} loss: {:.4f} batch train accuracy: {:.4f}'.format(
-                total_correct/float(total_seen), loss_val, correct/float(BATCH_SIZE)))
+            pbar.set_description('Mean train accuracy: {:.4f} loss: {:.4f} batch train accuracy: {:.4f} batch time: {:.4f}'.format(
+                total_correct/float(total_seen), loss_val, correct/float(BATCH_SIZE), batch_train_end-batch_train_start))
             pbar.update(1)
             pbar.refresh()
 
