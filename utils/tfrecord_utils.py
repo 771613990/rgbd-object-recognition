@@ -10,7 +10,6 @@ import cv2
 import pcl
 import numpy as np
 import tensorflow as tf
-import numpy.core.umath_tests as nm
 from sklearn.metrics.pairwise import pairwise_distances
 
 
@@ -30,8 +29,8 @@ def get_greedy_perm(distances):
     """
 
     mat_size = distances.shape[0]
-    #By default, takes the first point in the list to be the
-    #first point in the permutation, but could be random
+    # By default, takes the first point in the list to be the
+    # first point in the permutation, but could be random
     perm = np.zeros(mat_size, dtype=np.int64)
     lambdas = np.zeros(mat_size)
     ds = distances[0, :]
@@ -111,7 +110,8 @@ def create_point_cloud(depth_image, crop_top_left_corner=None, color_image=None)
     return point_cloud.reshape(-1, 3)
 
 
-def load_depth_and_create_point_cloud_data_rnd(pcd_filepath, img_filepath, loc_filepath, y_name, y_int, point_cloud_size=1024):
+def load_depth_and_create_point_cloud_data_rnd(pcd_filepath, img_filepath, loc_filepath, y_name, y_int,
+                                               point_cloud_size=1024):
     # Load loc
     with open(loc_filepath, 'r') as f:
         loc = [int(l) for l in f.read().strip().split(',')]
@@ -132,6 +132,7 @@ def load_depth_and_create_point_cloud_data_rnd(pcd_filepath, img_filepath, loc_f
     # Return
     return point_cloud, img_filepath, loc_filepath, y_name, y_int
 
+
 def _shuffle_points(point_cloud):
         """
         Shuffle points in point cloud and return its random permutation.
@@ -144,6 +145,7 @@ def _shuffle_points(point_cloud):
         np.random.shuffle(idx)
         return point_cloud[idx, ...]
 
+
 def _subtract_the_mean(point_cloud):
         """
         Subtract the mean in point cloud and return its zero-mean version.
@@ -154,6 +156,7 @@ def _subtract_the_mean(point_cloud):
         """
         point_cloud = point_cloud - np.mean(point_cloud, axis=0)
         return point_cloud
+
 
 def _jitter_points(point_cloud, sigma=0.001, clip=0.005):
         """
@@ -167,18 +170,20 @@ def _jitter_points(point_cloud, sigma=0.001, clip=0.005):
               (np.ndarray of size [N, 3]): Jittered point cloud data. 
         """
         # Get size
-        N, C = point_cloud.shape
+        n, c = point_cloud.shape
         
         # Generate noise
         if clip <= 0:
-            raise excpt.ValueError("Clip should be a positive number")
-        jittered_data = np.clip(sigma * np.random.randn(N, C), -1 * clip, clip)
+            raise ValueError("Clip should be a positive number")
+        jittered_data = np.clip(sigma * np.random.randn(n, c), -1 * clip, clip)
         
         # Add to pointcloud
         point_cloud += jittered_data
         return point_cloud
 
-def augment_point_cloud(point_cloud, img_filepath, loc_filepath, y_name, y_int, permute_points=True, jitter_points=True, subtract_the_mean=True):
+
+def augment_point_cloud(point_cloud, img_filepath, loc_filepath, y_name, y_int,
+                        permute_points=True, jitter_points=True, subtract_the_mean=True):
     # Permute points
     if permute_points:
         point_cloud = _shuffle_points(point_cloud)
@@ -190,6 +195,7 @@ def augment_point_cloud(point_cloud, img_filepath, loc_filepath, y_name, y_int, 
         point_cloud = _subtract_the_mean(point_cloud)
     # Return
     return point_cloud, img_filepath, loc_filepath, y_name, y_int
+
 
 def wrap_int64(value):
     return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))

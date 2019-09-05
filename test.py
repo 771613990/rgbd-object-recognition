@@ -16,7 +16,7 @@ parser.add_argument('--model', default='pointnet_cls_basic', help='Model name: p
 parser.add_argument('--log_dir', default='log', help='Log dir [default: log]')
 parser.add_argument('--num_point', type=int, default=1024, help='Point Number [256/512/1024/2048] [default: 1024]')
 parser.add_argument('--max_epoch', type=int, default=100, help='Epoch to run [default: 100]')
-parser.add_argument('--batch_size', type=int, default=32, help='Batch Size during training [default: 32]')
+parser.add_argument('--batch_size', type=int, default=1, help='Batch Size during training [default: 32]')
 parser.add_argument('--learning_rate', type=float, default=0.001, help='Initial learning rate [default: 0.001]')
 parser.add_argument('--momentum', type=float, default=0.9, help='Initial learning rate [default: 0.9]')
 parser.add_argument('--optimizer', default='adam', help='adam or momentum [default: adam]')
@@ -38,10 +38,10 @@ DECAY_RATE = FLAGS.decay_rate
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
-sys.path.append(os.path.join(BASE_DIR, 'models', FLAGS.model))
+sys.path.append(os.path.join(BASE_DIR, FLAGS.model))
 
 MODEL = importlib.import_module(FLAGS.model)  # import network module
-MODEL_FILE = os.path.join(BASE_DIR, 'models', FLAGS.model, FLAGS.model + '.py')
+MODEL_FILE = os.path.join(BASE_DIR, FLAGS.model, FLAGS.model + '.py')
 LOG_DIR = FLAGS.log_dir
 if not os.path.exists(LOG_DIR):
     os.mkdir(LOG_DIR)
@@ -94,11 +94,6 @@ def train():
         #######################################################################
 
         # Train filenames
-        tfrecord_filenames_train = [f for f in os.listdir(TFRECORDS_TRAIN_DIRPATH) if '.tfrecord' in f]
-        tfrecord_filenames_train.sort()
-        tfrecord_filepaths_train = [os.path.join(TFRECORDS_TRAIN_DIRPATH, f) for f in tfrecord_filenames_train]
-
-        # Train filenames
         tfrecord_filenames_test = [f for f in os.listdir(TFRECORDS_TEST_DIRPATH) if '.tfrecord' in f]
         tfrecord_filenames_test.sort()
         tfrecord_filepaths_test = [os.path.join(TFRECORDS_TEST_DIRPATH, f) for f in tfrecord_filenames_test]
@@ -116,13 +111,13 @@ def train():
                                                            b['int'], NUM_POINT],
                                                           [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
 
-        # Augmentation
-        tfdataset = tfdataset.map(lambda a, b, c, d, e:
-                                  tf.py_func(tfrecord_utils.augment_point_cloud, [a, b, c, d, e, True, True, False],
-                                             [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
+        # # Augmentation
+        # tfdataset = tfdataset.map(lambda a, b, c, d, e:
+        #                           tf.py_func(tfrecord_utils.augment_point_cloud, [a, b, c, d, e, False, False, True],
+        #                                      [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
 
         # Transformations
-        tfdataset = tfdataset.batch(batch_size=BATCH_SIZE, drop_remainder=True)
+        tfdataset = tfdataset.batch(batch_size=BATCH_SIZE, drop_remainder=False)
         tfdataset = tfdataset.shuffle(buffer_size=2*BATCH_SIZE)
         tfdataset = tfdataset.prefetch(BATCH_SIZE)
 
@@ -146,7 +141,7 @@ def train():
 
             # Get model and loss
             pred, _ = MODEL.get_model(data_pcd, is_training_pl, num_classes=NUM_CLASSES, bn_decay=bn_decay)
-            loss = MODEL.get_loss(pred, data_y_int, num_classes=NUM_CLASSES)
+            loss = MODEL.get_loss(pred, data_y_int)
             tf.summary.scalar('loss', loss)
 
             correct = tf.equal(tf.argmax(pred, 1), tf.to_int64(data_y_int))
@@ -178,14 +173,13 @@ def train():
 
         # Add summary writers
         merged = tf.summary.merge_all()
-        train_writer = tf.summary.FileWriter(os.path.join(LOG_DIR, 'train'), sess.graph)
         test_writer = tf.summary.FileWriter(os.path.join(LOG_DIR, 'test'))
 
         # Init variables
         sess.run(tf.global_variables_initializer())
 
         # Restore?
-        # saver.restore(sess, tf.train.latest_checkpoint('log'))
+        saver.restore(sess, tf.train.latest_checkpoint(LOG_DIR))
 
         ops = {'is_training_pl': is_training_pl, 'pred': pred,
                'loss': loss, 'train_op': train_op, 'merged': merged, 'step': batch,
@@ -193,63 +187,8 @@ def train():
                'data_y_int': data_y_int, 'data_pcd': data_pcd,
                }
 
-        for epoch in range(MAX_EPOCH):
-
-            log_string('**** EPOCH %03d ****' % epoch)
-            sys.stdout.flush()
-
-            train_one_epoch(sess, ops, train_writer, data_iterator, tfrecord_filepaths_train,
-                            tfrecord_filepaths_placeholder)
-            eval_one_epoch(sess, ops, test_writer, data_iterator, tfrecord_filepaths_test,
-                           tfrecord_filepaths_placeholder)
-
-            # Save the variables to disk.
-            save_path = saver.save(sess, os.path.join(LOG_DIR, "model.ckpt"))
-            log_string("Model saved in file: %s" % save_path)
-
-
-def train_one_epoch(sess, ops, train_writer, data_iterator, tfrecord_filepaths_train, tfrecord_filepaths_placeholder):
-    """ ops: dict mapping from string to tf ops """
-
-    # Iterate over the all datapoints
-    total_correct = 0.
-    total_seen = 0.
-    loss_sum = 0.
-
-    # Reset train data
-    sess.run(data_iterator.initializer, feed_dict={tfrecord_filepaths_placeholder: tfrecord_filepaths_train})
-
-    # Set trainable weights
-    sess.run(ops['is_training_pl'].assign(True))
-
-    pbar = tqdm(desc='', unit='tick')
-    try:
-        while True:
-
-            # Train it
-            batch_train_start = timer()
-            summary, step, _, loss_val, pred_val, current_label = sess.run(
-                [ops['merged'], ops['step'], ops['train_op'], ops['loss'], ops['pred'], ops['data_y_int']])
-            batch_train_end = timer()
-
-            # Some acc calulation
-            train_writer.add_summary(summary, step)
-            pred_val = np.argmax(pred_val, 1)
-            correct = np.sum(pred_val == current_label)
-            total_correct += correct
-            total_seen += BATCH_SIZE
-            loss_sum += loss_val
-
-            # Log info
-            desc = 'Mean train accuracy: {:.4f} loss: {:.4f} batch train accuracy: {:.4f} batch time: {:.4f}'
-            pbar.set_description(desc.format(total_correct/float(total_seen), loss_val, correct/float(BATCH_SIZE),
-                                             batch_train_end-batch_train_start))
-            pbar.update(1)
-            pbar.refresh()
-
-    except tf.errors.OutOfRangeError:
-        pass
-    pbar.close()
+        eval_one_epoch(sess, ops, test_writer, data_iterator, tfrecord_filepaths_test,
+                       tfrecord_filepaths_placeholder)
 
 
 def eval_one_epoch(sess, ops, test_writer, data_iterator, tfrecord_filepaths_test, tfrecord_filepaths_placeholder):
