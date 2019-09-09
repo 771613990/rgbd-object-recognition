@@ -870,5 +870,10 @@ def get_edge_feature(point_cloud, nn_idx, k=20):
 
   point_cloud_central = tf.tile(point_cloud_central, [1, 1, k, 1])
 
+  # Global & local
   edge_feature = tf.concat([point_cloud_central, point_cloud_neighbors-point_cloud_central], axis=-1)
+
+  # Local only
+  #edge_feature = point_cloud_neighbors - point_cloud_central
+
   return edge_feature

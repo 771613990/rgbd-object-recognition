@@ -38,7 +38,7 @@ DECAY_RATE = FLAGS.decay_rate
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
-sys.path.append(os.path.join(BASE_DIR, FLAGS.model))
+sys.path.append(os.path.join(BASE_DIR, 'models', FLAGS.model))
 
 MODEL = importlib.import_module(FLAGS.model)  # import network module
 MODEL_FILE = os.path.join(BASE_DIR, FLAGS.model, FLAGS.model + '.py')
@@ -141,7 +141,7 @@ def train():
 
             # Get model and loss
             pred, _ = MODEL.get_model(data_pcd, is_training_pl, num_classes=NUM_CLASSES, bn_decay=bn_decay)
-            loss = MODEL.get_loss(pred, data_y_int)
+            loss = MODEL.get_loss(pred, data_y_int, num_classes=NUM_CLASSES)
             tf.summary.scalar('loss', loss)
 
             correct = tf.equal(tf.argmax(pred, 1), tf.to_int64(data_y_int))
