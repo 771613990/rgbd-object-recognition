@@ -129,7 +129,7 @@ def get_model(point_cloud, is_training, num_classes, bn_decay=None):
     return net, end_points
 
 
-def get_loss(pred, label, num_classes):
+def get_loss(pred, label, end_points, num_classes):
     """ pred: B*NUM_CLASSES,
       label: B, """
     labels = tf.one_hot(indices=label, depth=num_classes)
