@@ -110,16 +110,22 @@ def train():
         tfdataset = tfdataset.shuffle(buffer_size=BATCH_SIZE*2)
         tfdataset = tfdataset.map(tfrecord_utils.tfexample_to_paths)
 
+        # # Load data
+        # tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth_and_create_point_cloud_data_rnd,
+        #                                                   [a['pcd_path'], a['img_path'], a['loc_path'], b['name'],
+        #                                                    b['int'], NUM_POINT],
+        #                                                   [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
+
         # Load data
-        tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth_and_create_point_cloud_data_rnd,
+        tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth,
                                                           [a['pcd_path'], a['img_path'], a['loc_path'], b['name'],
-                                                           b['int'], NUM_POINT],
+                                                           b['int'], 224, 224],
                                                           [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
 
-        # Augmentation
-        tfdataset = tfdataset.map(lambda a, b, c, d, e:
-                                  tf.py_func(tfrecord_utils.augment_point_cloud, [a, b, c, d, e, True, True, False],
-                                             [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
+        # # Augmentation
+        # tfdataset = tfdataset.map(lambda a, b, c, d, e:
+        #                           tf.py_func(tfrecord_utils.augment_point_cloud, [a, b, c, d, e, True, True, False],
+        #                                      [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
 
         # Transformations
         tfdataset = tfdataset.batch(batch_size=BATCH_SIZE, drop_remainder=True)
@@ -129,7 +135,7 @@ def train():
         # Iterator
         data_iterator = tfdataset.make_initializable_iterator()
         data_pcd, _, _, _, data_y_int = data_iterator.get_next()
-        data_pcd = tf.reshape(data_pcd, (BATCH_SIZE, NUM_POINT, 3))
+        data_pcd = tf.reshape(data_pcd, (BATCH_SIZE, 224, 224, 1))
 
         #######################################################################
         # Network architecture

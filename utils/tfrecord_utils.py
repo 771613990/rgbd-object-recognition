@@ -133,6 +133,33 @@ def load_depth_and_create_point_cloud_data_rnd(pcd_filepath, img_filepath, loc_f
     return point_cloud, img_filepath, loc_filepath, y_name, y_int
 
 
+def load_depth(pcd_filepath, img_filepath, loc_filepath, y_name, y_int, depth_height, depth_width):
+    # Load loc
+    with open(loc_filepath, 'r') as f:
+        loc = [int(l) for l in f.read().strip().split(',')]
+    # Load depth and convert to float32
+    depth = cv2.imread(pcd_filepath.decode('utf-8'), cv2.IMREAD_ANYDEPTH)
+    depth = depth.astype(np.float32)
+    # Reshape
+    if depth.shape[0] < depth_height:
+        pad_size = depth_height - depth.shape[0]
+        depth = np.pad(depth, ((pad_size//2 + pad_size%2, pad_size//2), (0, 0)), 'constant',
+                       constant_values=(np.nan, np.nan))
+    if depth.shape[0] > depth_height:
+        pad_size = depth.shape[0] - depth_height
+        depth = depth[pad_size//2:-pad_size//2]
+    if depth.shape[1] < depth_width:
+        pad_size = depth_width - depth.shape[1]
+        depth = np.pad(depth, ((0, 0), (pad_size//2 + pad_size%2, pad_size//2)), 'constant',
+                       constant_values=(np.nan, np.nan))
+    if depth.shape[1] > depth_width:
+        pad_size = depth.shape[1] - depth_width
+        depth = depth[:, pad_size//2:-pad_size//2]
+    # Replace nans with 0
+    depth = np.nan_to_num(depth)
+    # Return
+    return depth, img_filepath, loc_filepath, y_name, y_int
+
 def _shuffle_points(point_cloud):
         """
         Shuffle points in point cloud and return its random permutation.
