@@ -143,20 +143,29 @@ def load_depth(pcd_filepath, img_filepath, loc_filepath, y_name, y_int, depth_he
     # Reshape
     if depth.shape[0] < depth_height:
         pad_size = depth_height - depth.shape[0]
-        depth = np.pad(depth, ((pad_size//2 + pad_size%2, pad_size//2), (0, 0)), 'constant',
-                       constant_values=(np.nan, np.nan))
+        pad_1 = np.random.choice(pad_size)
+        pad_2 = pad_size - pad_1
+        depth = np.pad(depth, ((pad_1, pad_2), (0, 0)), 'constant', constant_values=(0.0, 0.0))
     if depth.shape[0] > depth_height:
         pad_size = depth.shape[0] - depth_height
-        depth = depth[pad_size//2:-pad_size//2]
+        pad_1 = np.random.choice(pad_size)
+        pad_2 = pad_size - pad_1
+        depth = depth[pad_1:-pad_2]
     if depth.shape[1] < depth_width:
         pad_size = depth_width - depth.shape[1]
-        depth = np.pad(depth, ((0, 0), (pad_size//2 + pad_size%2, pad_size//2)), 'constant',
-                       constant_values=(np.nan, np.nan))
+        pad_1 = np.random.choice(pad_size)
+        pad_2 = pad_size - pad_1
+        depth = np.pad(depth, ((0, 0), (pad_1, pad_2)), 'constant', constant_values=(0.0, 0.0))
     if depth.shape[1] > depth_width:
         pad_size = depth.shape[1] - depth_width
-        depth = depth[:, pad_size//2:-pad_size//2]
+        pad_1 = np.random.choice(pad_size)
+        pad_2 = pad_size - pad_1
+        depth = depth[:, pad_1:-pad_2]
     # Replace nans with 0
-    depth = np.nan_to_num(depth)
+    # depth = np.nan_to_num(depth)
+    if np.isnan(depth).any():
+        print('NaN in input {}'.format(pcd_filepath))
+        exit()
     # Return
     return depth, img_filepath, loc_filepath, y_name, y_int
 
@@ -222,7 +231,6 @@ def augment_point_cloud(point_cloud, img_filepath, loc_filepath, y_name, y_int,
         point_cloud = _subtract_the_mean(point_cloud)
     # Return
     return point_cloud, img_filepath, loc_filepath, y_name, y_int
-
 
 def wrap_int64(value):
     return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
