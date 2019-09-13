@@ -117,11 +117,11 @@ def train():
         #                                                   [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
 
         # Load data
-        depth_image_width = 224
-        depth_image_height = 224
-        tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth,
+        depth_image_size = 224
+        depth_image_channels = 3
+        tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth_in_hha,
                                                           [a['pcd_path'], a['img_path'], a['loc_path'], b['name'],
-                                                           b['int'], depth_image_height, depth_image_width],
+                                                           b['int'], depth_image_size],
                                                           [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
 
         # # Augmentation
@@ -137,7 +137,7 @@ def train():
         # Iterator
         data_iterator = tfdataset.make_initializable_iterator()
         data_pcd, _, _, _, data_y_int = data_iterator.get_next()
-        data_pcd = tf.reshape(data_pcd, (BATCH_SIZE, depth_image_height, depth_image_width, 1))
+        data_pcd = tf.reshape(data_pcd, (BATCH_SIZE, depth_image_size, depth_image_size, depth_image_channels))
 
         #######################################################################
         # Network architecture

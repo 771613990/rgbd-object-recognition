@@ -6,11 +6,18 @@ Author: Daniel Koguciuk
 
 from __future__ import print_function
 
+import os
+import sys
 import cv2
 import pcl
 import numpy as np
 import tensorflow as tf
 from sklearn.metrics.pairwise import pairwise_distances
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(BASE_DIR)
+
+import hha_utils
 
 
 def get_greedy_perm(distances):
@@ -169,53 +176,73 @@ def load_depth(pcd_filepath, img_filepath, loc_filepath, y_name, y_int, depth_he
     # Return
     return depth, img_filepath, loc_filepath, y_name, y_int
 
+
+def load_depth_in_hha(pcd_filepath, img_filepath, loc_filepath, y_name, y_int, depth_size):
+    # Load loc
+    with open(loc_filepath, 'r') as f:
+        loc = [int(l) for l in f.read().strip().split(',')]
+    # Load depth
+    depth_whole = np.zeros((480, 640), dtype=np.float32)
+    depth_object = cv2.imread(pcd_filepath.decode('utf-8'), cv2.IMREAD_ANYDEPTH) / 1000
+    depth_whole[loc[1]-1:loc[1]-1+depth_object.shape[0], loc[0]-1:loc[0]-1+depth_object.shape[1]] = depth_object
+
+    # Calc HHA representation
+    cam_params = hha_utils.get_camera_param_washington()
+    hha_image = hha_utils.get_HHA(cam_params, depth_whole, depth_whole)
+    hha_image = hha_image[loc[1]-1:loc[1]-1+depth_object.shape[0], loc[0]-1:loc[0]-1+depth_object.shape[1]]
+    hha_image = hha_utils.resize_ratio_padding(hha_image, depth_size)
+
+    # Return
+    return hha_image.astype(np.float32), img_filepath, loc_filepath, y_name, y_int
+
+
 def _shuffle_points(point_cloud):
-        """
-        Shuffle points in point cloud and return its random permutation.
-        Args:
-            point_cloud (numpy.ndarray of size [N,3]): point clouds data to be shuffled along first axis
-        Returns:
-            (numpy.ndarray of size [N,3]): shuffled point cloud
-        """
-        idx = np.arange(point_cloud.shape[0])
-        np.random.shuffle(idx)
-        return point_cloud[idx, ...]
+    """
+    Shuffle points in point cloud and return its random permutation.
+    Args:
+        point_cloud (numpy.ndarray of size [N,3]): point clouds data to be shuffled along first axis
+    Returns:
+        (numpy.ndarray of size [N,3]): shuffled point cloud
+    """
+    idx = np.arange(point_cloud.shape[0])
+    np.random.shuffle(idx)
+    return point_cloud[idx, ...]
 
 
 def _subtract_the_mean(point_cloud):
-        """
-        Subtract the mean in point cloud and return its zero-mean version.
-        Args:
-            point_cloud (numpy.ndarray of size [N,3]): point cloud
-        Returns:
-            (numpy.ndarray of size [N,3]): point cloud with zero-mean
-        """
-        point_cloud = point_cloud - np.mean(point_cloud, axis=0)
-        return point_cloud
+    """
+    Subtract the mean in point cloud and return its zero-mean version.
+    Args:
+        point_cloud (numpy.ndarray of size [N,3]): point cloud
+    Returns:
+        (numpy.ndarray of size [N,3]): point cloud with zero-mean
+    """
+    point_cloud = point_cloud - np.mean(point_cloud, axis=0)
+    return point_cloud
 
 
 def _jitter_points(point_cloud, sigma=0.001, clip=0.005):
-        """
-        Randomly jitter points
+    """
+    Randomly jitter points
 
-        Args:
-            point_cloud (np.ndarray of size [N, 3]): Point cloud
-            sigma (float): Sigma value of gaussian noise to be applied pointwise.
-            clip (float): Clipping value of gaussian noise.
-        Returns:
-              (np.ndarray of size [N, 3]): Jittered point cloud data. 
-        """
-        # Get size
-        n, c = point_cloud.shape
-        
-        # Generate noise
-        if clip <= 0:
-            raise ValueError("Clip should be a positive number")
-        jittered_data = np.clip(sigma * np.random.randn(n, c), -1 * clip, clip)
-        
-        # Add to pointcloud
-        point_cloud += jittered_data
-        return point_cloud
+    Args:
+        point_cloud (np.ndarray of size [N, 3]): Point cloud
+        sigma (float): Sigma value of gaussian noise to be applied pointwise.
+        clip (float): Clipping value of gaussian noise.
+    Returns:
+          (np.ndarray of size [N, 3]): Jittered point cloud data.
+    """
+    # Get size
+    n, c = point_cloud.shape
+
+    # Generate noise
+    if clip <= 0:
+        raise ValueError("Clip should be a positive number")
+    jittered_data = np.clip(sigma * np.random.randn(n, c), -1 * clip, clip)
+
+    # Add to pointcloud
+    point_cloud += jittered_data
+    return point_cloud
 
 
 def augment_point_cloud(point_cloud, img_filepath, loc_filepath, y_name, y_int,
@@ -231,6 +258,7 @@ def augment_point_cloud(point_cloud, img_filepath, loc_filepath, y_name, y_int,
         point_cloud = _subtract_the_mean(point_cloud)
     # Return
     return point_cloud, img_filepath, loc_filepath, y_name, y_int
+
 
 def wrap_int64(value):
     return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
