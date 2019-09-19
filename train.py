@@ -40,12 +40,18 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, 'models', FLAGS.model))
 
-MODEL = importlib.import_module(FLAGS.model)  # import network module
-MODEL_FILE = os.path.join(BASE_DIR, 'models', FLAGS.model, FLAGS.model + '.py')
 LOG_DIR = FLAGS.log_dir
 if not os.path.exists(LOG_DIR):
     os.mkdir(LOG_DIR)
-os.system('cp %s %s' % (MODEL_FILE, LOG_DIR))  # bkp of model def
+
+# Import and backup model file
+if 'inception' not in FLAGS.model:
+    MODEL = importlib.import_module(FLAGS.model)  # import network module
+    MODEL_FILE = os.path.join(BASE_DIR, 'models', FLAGS.model, FLAGS.model + '.py')
+    os.system('cp %s %s' % (MODEL_FILE, LOG_DIR))  # bkp of model def
+else:
+    import slim.nets.inception_v3 as inception_v3
+
 os.system('cp train.py %s' % LOG_DIR)  # bkp of train procedure
 LOG_FOUT = open(os.path.join(LOG_DIR, 'log_train.txt'), 'w')
 LOG_FOUT.write(str(FLAGS) + '\n')
@@ -117,17 +123,23 @@ def train():
         #                                                   [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
 
         # Load data
-        depth_image_size = 224
-        depth_image_channels = 3
-        tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth_in_hha,
+        depth_image_size = 299
+        depth_image_channels = 1
+        depth_image_scale = 0.1 # max depth from kinect is 10m, so 0.1 gives us range of 0-1
+        tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth,
                                                           [a['pcd_path'], a['img_path'], a['loc_path'], b['name'],
-                                                           b['int'], depth_image_size],
+                                                           b['int'], depth_image_size, depth_image_scale],
                                                           [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
 
         # # Augmentation
         # tfdataset = tfdataset.map(lambda a, b, c, d, e:
         #                           tf.py_func(tfrecord_utils.augment_point_cloud, [a, b, c, d, e, True, True, False],
         #                                      [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
+
+        # Augmentation
+        tfdataset = tfdataset.map(lambda a, b, c, d, e:
+                                  tf.py_func(tfrecord_utils.augment_depth_image, [a, b, c, d, e],
+                                             [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
 
         # Transformations
         tfdataset = tfdataset.batch(batch_size=BATCH_SIZE, drop_remainder=True)
@@ -153,10 +165,15 @@ def train():
             tf.summary.scalar('bn_decay', bn_decay)
 
             # Get model and loss
-            pred, end_points = MODEL.get_model(data_pcd, is_training_pl, num_classes=NUM_CLASSES, bn_decay=bn_decay)
-            loss = MODEL.get_loss(pred, data_y_int, end_points, num_classes=NUM_CLASSES)
-            tf.summary.scalar('loss', loss)
+            if 'inception' not in FLAGS.model:
+                pred, end_points = MODEL.get_model(data_pcd, is_training_pl, num_classes=NUM_CLASSES, bn_decay=bn_decay)
+                loss = MODEL.get_loss(pred, data_y_int, end_points, num_classes=NUM_CLASSES)
+            else:
+                pred, end_points = inception_v3.inception_v3(inputs=data_pcd, num_classes=NUM_CLASSES)
+                batch_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=pred, labels=data_y_int)
+                loss = tf.reduce_mean(batch_loss)
 
+            tf.summary.scalar('loss', loss)
             correct = tf.equal(tf.argmax(pred, 1), tf.to_int64(data_y_int))
             accuracy = tf.reduce_sum(tf.cast(correct, tf.float32)) / float(BATCH_SIZE)
             tf.summary.scalar('accuracy', accuracy)

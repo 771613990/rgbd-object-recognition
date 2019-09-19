@@ -12,6 +12,7 @@ import cv2
 import pcl
 import numpy as np
 import tensorflow as tf
+from imgaug import augmenters as iaa
 from sklearn.metrics.pairwise import pairwise_distances
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -140,7 +141,7 @@ def load_depth_and_create_point_cloud_data_rnd(pcd_filepath, img_filepath, loc_f
     return point_cloud, img_filepath, loc_filepath, y_name, y_int
 
 
-def load_depth(pcd_filepath, img_filepath, loc_filepath, y_name, y_int, depth_height, depth_width):
+def load_depth(pcd_filepath, img_filepath, loc_filepath, y_name, y_int, depth_size, scale=1.0):
     # Load loc
     with open(loc_filepath, 'r') as f:
         loc = [int(l) for l in f.read().strip().split(',')]
@@ -148,23 +149,23 @@ def load_depth(pcd_filepath, img_filepath, loc_filepath, y_name, y_int, depth_he
     depth = cv2.imread(pcd_filepath.decode('utf-8'), cv2.IMREAD_ANYDEPTH)
     depth = depth.astype(np.float32)
     # Reshape
-    if depth.shape[0] < depth_height:
-        pad_size = depth_height - depth.shape[0]
+    if depth.shape[0] < depth_size:
+        pad_size = depth_size - depth.shape[0]
         pad_1 = np.random.choice(pad_size)
         pad_2 = pad_size - pad_1
         depth = np.pad(depth, ((pad_1, pad_2), (0, 0)), 'constant', constant_values=(0.0, 0.0))
-    if depth.shape[0] > depth_height:
-        pad_size = depth.shape[0] - depth_height
+    if depth.shape[0] > depth_size:
+        pad_size = depth.shape[0] - depth_size
         pad_1 = np.random.choice(pad_size)
         pad_2 = pad_size - pad_1
         depth = depth[pad_1:-pad_2]
-    if depth.shape[1] < depth_width:
-        pad_size = depth_width - depth.shape[1]
+    if depth.shape[1] < depth_size:
+        pad_size = depth_size - depth.shape[1]
         pad_1 = np.random.choice(pad_size)
         pad_2 = pad_size - pad_1
         depth = np.pad(depth, ((0, 0), (pad_1, pad_2)), 'constant', constant_values=(0.0, 0.0))
-    if depth.shape[1] > depth_width:
-        pad_size = depth.shape[1] - depth_width
+    if depth.shape[1] > depth_size:
+        pad_size = depth.shape[1] - depth_size
         pad_1 = np.random.choice(pad_size)
         pad_2 = pad_size - pad_1
         depth = depth[:, pad_1:-pad_2]
@@ -173,6 +174,8 @@ def load_depth(pcd_filepath, img_filepath, loc_filepath, y_name, y_int, depth_he
     if np.isnan(depth).any():
         print('NaN in input {}'.format(pcd_filepath))
         exit()
+    # Scale depth channel
+    depth *= scale
     # Return
     return depth, img_filepath, loc_filepath, y_name, y_int
 
@@ -194,6 +197,18 @@ def load_depth_in_hha(pcd_filepath, img_filepath, loc_filepath, y_name, y_int, d
 
     # Return
     return hha_image.astype(np.float32), img_filepath, loc_filepath, y_name, y_int
+
+
+def augment_depth_image(depth_image, img_filepath, loc_filepath, y_name, y_int):
+    seq = iaa.Sequential([
+        iaa.Affine(rotate=(-25, 25)),
+        iaa.GaussianBlur(sigma=(0, 1)),
+        iaa.Fliplr(p=0.5),
+        iaa.Affine(translate_percent={"x": (-0.2, 0.2), "y": (-0.2, 0.2)}),
+    ], random_order=True)
+    depth_image = seq.augment_image(depth_image)
+    # Return
+    return depth_image, img_filepath, loc_filepath, y_name, y_int
 
 
 def _shuffle_points(point_cloud):
