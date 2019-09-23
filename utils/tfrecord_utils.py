@@ -11,6 +11,7 @@ import sys
 import cv2
 import pcl
 import numpy as np
+from PIL import Image
 import tensorflow as tf
 from imgaug import augmenters as iaa
 from sklearn.metrics.pairwise import pairwise_distances
@@ -87,7 +88,7 @@ def prepare_data_rnd(pcd_filepath, img_filepath, loc_filepath, y_name, y_int, po
     return np.asarray(point_cloud), img_filepath, loc_filepath, y_name, y_int
 
 
-def create_point_cloud(depth_image, crop_top_left_corner=None, color_image=None):
+def create_point_cloud(depth_image, crop_top_left_corner=None, color_image=None, flat_output=True):
     # Depth conversion
     depth = depth_image.astype(np.float32)
     depth[depth == 0] = np.nan
@@ -113,9 +114,11 @@ def create_point_cloud(depth_image, crop_top_left_corner=None, color_image=None)
     if color_image is not None:
         point_cloud[..., 3:] = cv2.cvtColor(color_image, cv2.COLOR_BGR2RGB).astype(np.float32) / 255
     # Cut off to far points & nan handling
-    point_cloud[point_cloud[..., 2] > 2.5] = np.nan
+    point_cloud[point_cloud[..., 2] > 10.0] = np.nan
 #    point_cloud = np.nan_to_num(point_cloud)
-    return point_cloud.reshape(-1, 3)
+    if flat_output:
+        point_cloud = point_cloud.reshape(-1, 3)
+    return point_cloud
 
 
 def load_depth_and_create_point_cloud_data_rnd(pcd_filepath, img_filepath, loc_filepath, y_name, y_int,
@@ -137,6 +140,42 @@ def load_depth_and_create_point_cloud_data_rnd(pcd_filepath, img_filepath, loc_f
     elif len(point_cloud) < point_cloud_size:
         pad_size = point_cloud_size - len(point_cloud)
         point_cloud = np.pad(point_cloud, ((0, pad_size), (0, 0)), 'edge')
+    # Return
+    return point_cloud, img_filepath, loc_filepath, y_name, y_int
+
+
+def load_depth_and_create_organized_point_cloud(pcd_filepath, img_filepath, loc_filepath, y_name, y_int,
+                                                cloud_image_size):
+    # Load loc
+    with open(loc_filepath, 'r') as f:
+        loc = [int(l) for l in f.read().strip().split(',')]
+    # Load depth and convert to float32
+    depth = cv2.imread(pcd_filepath.decode('utf-8'), cv2.IMREAD_ANYDEPTH)
+    depth = depth.astype(np.float32)
+    # Create point cloud
+    point_cloud = create_point_cloud(depth, loc, flat_output=False)
+    point_cloud = np.nan_to_num(point_cloud)
+    # Reshape
+    if point_cloud.shape[0] < cloud_image_size:
+        pad_size = cloud_image_size - point_cloud.shape[0]
+        pad_1 = np.random.choice(pad_size)
+        pad_2 = pad_size - pad_1
+        point_cloud = np.pad(point_cloud, ((pad_1, pad_2), (0, 0), (0, 0)), 'constant', constant_values=(0.0, 0.0))
+    if point_cloud.shape[0] > cloud_image_size:
+        pad_size = point_cloud.shape[0] - cloud_image_size
+        pad_1 = np.random.choice(pad_size)
+        pad_2 = pad_size - pad_1
+        point_cloud = point_cloud[pad_1:-pad_2]
+    if point_cloud.shape[1] < cloud_image_size:
+        pad_size = cloud_image_size - point_cloud.shape[1]
+        pad_1 = np.random.choice(pad_size)
+        pad_2 = pad_size - pad_1
+        point_cloud = np.pad(point_cloud, ((0, 0), (pad_1, pad_2), (0, 0)), 'constant', constant_values=(0.0, 0.0))
+    if point_cloud.shape[1] > cloud_image_size:
+        pad_size = point_cloud.shape[1] - cloud_image_size
+        pad_1 = np.random.choice(pad_size)
+        pad_2 = pad_size - pad_1
+        point_cloud = point_cloud[:, pad_1:-pad_2]
     # Return
     return point_cloud, img_filepath, loc_filepath, y_name, y_int
 

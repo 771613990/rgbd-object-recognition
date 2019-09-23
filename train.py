@@ -112,44 +112,68 @@ def train():
         # TFdataset
         tfrecord_filepaths_placeholder = tf.placeholder(tf.string, [None])
         tfdataset = tf.data.TFRecordDataset(tfrecord_filepaths_placeholder)
-        tfdataset = tfdataset.prefetch(buffer_size=BATCH_SIZE*10)
-        tfdataset = tfdataset.shuffle(buffer_size=BATCH_SIZE*2)
-        tfdataset = tfdataset.map(tfrecord_utils.tfexample_to_paths)
+        tfdataset = tfdataset.shuffle(buffer_size=BATCH_SIZE*10)
+        tfdataset = tfdataset.map(tfrecord_utils.tfexample_to_paths, num_parallel_calls=4)
 
-        # # Load data
+        #######################################################################
+        # Unorganized point cloud
+        #######################################################################
+
+        # # Load
         # tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth_and_create_point_cloud_data_rnd,
         #                                                   [a['pcd_path'], a['img_path'], a['loc_path'], b['name'],
         #                                                    b['int'], NUM_POINT],
         #                                                   [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
 
-        # Load data
-        depth_image_size = 299
-        depth_image_channels = 1
-        depth_image_scale = 0.1 # max depth from kinect is 10m, so 0.1 gives us range of 0-1
-        tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth,
-                                                          [a['pcd_path'], a['img_path'], a['loc_path'], b['name'],
-                                                           b['int'], depth_image_size, depth_image_scale],
-                                                          [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
-
-        # # Augmentation
+        # # Augment
         # tfdataset = tfdataset.map(lambda a, b, c, d, e:
         #                           tf.py_func(tfrecord_utils.augment_point_cloud, [a, b, c, d, e, True, True, False],
         #                                      [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
 
-        # Augmentation
-        tfdataset = tfdataset.map(lambda a, b, c, d, e:
-                                  tf.py_func(tfrecord_utils.augment_depth_image, [a, b, c, d, e],
-                                             [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
+        #######################################################################
+        # Organized point cloud
+        #######################################################################
+
+        # Settings
+        data_channels = 3
+        data_height = 299
+        data_width = 299
+
+        # Load data
+        tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth_and_create_organized_point_cloud,
+                                                          [a['pcd_path'], a['img_path'], a['loc_path'], b['name'],
+                                                           b['int'], data_height],
+                                                          [tf.float32, tf.string, tf.string, tf.string, tf.int64]),
+                                  num_parallel_calls=4)
+
+        #######################################################################
+        # Depth image
+        #######################################################################
+
+        # # Load data
+        # data_channels = 1
+        # data_height = 299
+        # data_width = 299
+        # data_scale = 1.0 # max depth from kinect is 10m, so 0.1 gives us range of 0-1
+        # tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth,
+        #                                                   [a['pcd_path'], a['img_path'], a['loc_path'], b['name'],
+        #                                                    b['int'], data_height, data_scale],
+        #                                                   [tf.float32, tf.string, tf.string, tf.string, tf.int64]),
+        #                           num_parallel_calls=4)
+
+        # # Augment
+        # tfdataset = tfdataset.map(lambda a, b, c, d, e:
+        #                           tf.py_func(tfrecord_utils.augment_depth_image, [a, b, c, d, e],
+        #                                      [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
 
         # Transformations
         tfdataset = tfdataset.batch(batch_size=BATCH_SIZE, drop_remainder=True)
-        tfdataset = tfdataset.shuffle(buffer_size=2*BATCH_SIZE)
-        tfdataset = tfdataset.prefetch(BATCH_SIZE)
+        tfdataset = tfdataset.prefetch(10)
 
         # Iterator
         data_iterator = tfdataset.make_initializable_iterator()
         data_pcd, _, _, _, data_y_int = data_iterator.get_next()
-        data_pcd = tf.reshape(data_pcd, (BATCH_SIZE, depth_image_size, depth_image_size, depth_image_channels))
+        data_pcd = tf.reshape(data_pcd, (BATCH_SIZE, data_height, data_width, data_channels))
 
         #######################################################################
         # Network architecture
