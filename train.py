@@ -45,12 +45,9 @@ if not os.path.exists(LOG_DIR):
     os.mkdir(LOG_DIR)
 
 # Import and backup model file
-if 'inception' not in FLAGS.model:
-    MODEL = importlib.import_module(FLAGS.model)  # import network module
-    MODEL_FILE = os.path.join(BASE_DIR, 'models', FLAGS.model, FLAGS.model + '.py')
-    os.system('cp %s %s' % (MODEL_FILE, LOG_DIR))  # bkp of model def
-else:
-    import slim.nets.inception_v3 as inception_v3
+MODEL = importlib.import_module(FLAGS.model)  # import network module
+MODEL_FILE = os.path.join(BASE_DIR, 'models', FLAGS.model, FLAGS.model + '.py')
+os.system('cp %s %s' % (MODEL_FILE, LOG_DIR))  # bkp of model def
 
 os.system('cp train.py %s' % LOG_DIR)  # bkp of train procedure
 LOG_FOUT = open(os.path.join(LOG_DIR, 'log_train.txt'), 'w')
@@ -156,9 +153,11 @@ def train():
         data_channels = 1
         data_height = 299
         data_width = 299
-        data_scale = 1.0 # max depth from kinect is 10m, so 0.1 gives us range of 0-1
-        data_mean = 775.6092    # None if zero, sample specific if below zero, given value otherwise
-        data_std = 499.1676     # None if zero, sample specific if below zero, given value otherwise
+        data_scale = 1.0        # max depth from kinect is 10m, so 0.1 gives us range of 0-1
+        # data_mean = 775.6092    # None if zero, sample specific if below zero, given value otherwise
+        # data_std = 499.1676     # None if zero, sample specific if below zero, given value otherwise
+        data_mean = 775.6092 - 499.1676     # To be in the range of 0-1
+        data_std = 499.1676 * 2             # To be in the range of 0-1
         tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth,
                                                           [a['pcd_path'], a['img_path'], a['loc_path'], b['name'],
                                                            b['int'], data_height, data_scale, data_mean, data_std],
@@ -194,13 +193,8 @@ def train():
             tf.summary.scalar('bn_decay', bn_decay)
 
             # Get model and loss
-            if 'inception' not in FLAGS.model:
-                pred, end_points = MODEL.get_model(data_pcd, is_training_pl, num_classes=NUM_CLASSES, bn_decay=bn_decay)
-                loss = MODEL.get_loss(pred, data_y_int, end_points, num_classes=NUM_CLASSES)
-            else:
-                pred, end_points = inception_v3.inception_v3(inputs=data_pcd, num_classes=NUM_CLASSES)
-                batch_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=pred, labels=data_y_int)
-                loss = tf.reduce_mean(batch_loss)
+            pred, end_points = MODEL.get_model(data_pcd, is_training_pl, num_classes=NUM_CLASSES, bn_decay=bn_decay)
+            loss = MODEL.get_loss(pred, data_y_int, end_points, num_classes=NUM_CLASSES)
 
             tf.summary.scalar('loss', loss)
             correct = tf.equal(tf.argmax(pred, 1), tf.to_int64(data_y_int))
