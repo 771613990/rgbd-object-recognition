@@ -112,7 +112,7 @@ def train():
         # TFdataset
         tfrecord_filepaths_placeholder = tf.placeholder(tf.string, [None])
         tfdataset = tf.data.TFRecordDataset(tfrecord_filepaths_placeholder)
-        tfdataset = tfdataset.shuffle(buffer_size=BATCH_SIZE*10)
+        # tfdataset = tfdataset.shuffle(buffer_size=BATCH_SIZE*10)   Only one tfrecord file -> no action
         tfdataset = tfdataset.map(tfrecord_utils.tfexample_to_paths, num_parallel_calls=4)
 
         #######################################################################
@@ -134,32 +134,36 @@ def train():
         # Organized point cloud
         #######################################################################
 
-        # Settings
-        data_channels = 3
-        data_height = 299
-        data_width = 299
-
-        # Load data
-        tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth_and_create_organized_point_cloud,
-                                                          [a['pcd_path'], a['img_path'], a['loc_path'], b['name'],
-                                                           b['int'], data_height],
-                                                          [tf.float32, tf.string, tf.string, tf.string, tf.int64]),
-                                  num_parallel_calls=4)
+        # # Settings
+        # data_channels = 3
+        # data_height = 299
+        # data_width = 299
+        # zero_mean = True
+        # unit_ball = True
+        #
+        # # Load data
+        # tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth_and_create_organized_point_cloud,
+        #                                                   [a['pcd_path'], a['img_path'], a['loc_path'], b['name'],
+        #                                                    b['int'], data_height, zero_mean, unit_ball],
+        #                                                   [tf.float32, tf.string, tf.string, tf.string, tf.int64]),
+        #                           num_parallel_calls=4)
 
         #######################################################################
         # Depth image
         #######################################################################
 
-        # # Load data
-        # data_channels = 1
-        # data_height = 299
-        # data_width = 299
-        # data_scale = 1.0 # max depth from kinect is 10m, so 0.1 gives us range of 0-1
-        # tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth,
-        #                                                   [a['pcd_path'], a['img_path'], a['loc_path'], b['name'],
-        #                                                    b['int'], data_height, data_scale],
-        #                                                   [tf.float32, tf.string, tf.string, tf.string, tf.int64]),
-        #                           num_parallel_calls=4)
+        # Load data
+        data_channels = 1
+        data_height = 299
+        data_width = 299
+        data_scale = 1.0 # max depth from kinect is 10m, so 0.1 gives us range of 0-1
+        data_mean = 775.6092    # None if zero, sample specific if below zero, given value otherwise
+        data_std = 499.1676     # None if zero, sample specific if below zero, given value otherwise
+        tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth,
+                                                          [a['pcd_path'], a['img_path'], a['loc_path'], b['name'],
+                                                           b['int'], data_height, data_scale, data_mean, data_std],
+                                                          [tf.float32, tf.string, tf.string, tf.string, tf.int64]),
+                                  num_parallel_calls=4)
 
         # # Augment
         # tfdataset = tfdataset.map(lambda a, b, c, d, e:
@@ -167,6 +171,7 @@ def train():
         #                                      [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
 
         # Transformations
+        tfdataset = tfdataset.shuffle(buffer_size=BATCH_SIZE*2)
         tfdataset = tfdataset.batch(batch_size=BATCH_SIZE, drop_remainder=True)
         tfdataset = tfdataset.prefetch(10)
 

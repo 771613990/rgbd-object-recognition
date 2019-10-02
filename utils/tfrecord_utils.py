@@ -145,7 +145,7 @@ def load_depth_and_create_point_cloud_data_rnd(pcd_filepath, img_filepath, loc_f
 
 
 def load_depth_and_create_organized_point_cloud(pcd_filepath, img_filepath, loc_filepath, y_name, y_int,
-                                                cloud_image_size):
+                                                cloud_image_size, zero_mean, unit_ball):
     # Load loc
     with open(loc_filepath, 'r') as f:
         loc = [int(l) for l in f.read().strip().split(',')]
@@ -155,6 +155,14 @@ def load_depth_and_create_organized_point_cloud(pcd_filepath, img_filepath, loc_
     # Create point cloud
     point_cloud = create_point_cloud(depth, loc, flat_output=False)
     point_cloud = np.nan_to_num(point_cloud)
+    if zero_mean:
+        mean = np.mean(point_cloud.reshape(-1, 3), axis=0)
+        point_cloud = point_cloud - mean
+    if unit_ball:
+        mean = np.mean(point_cloud.reshape(-1, 3), axis=0)
+        distances = np.linalg.norm(point_cloud - mean, axis=-1)
+        distance_max = np.max(distances)
+        point_cloud = np.divide(point_cloud, distance_max)
     # Reshape
     if point_cloud.shape[0] < cloud_image_size:
         pad_size = cloud_image_size - point_cloud.shape[0]
@@ -180,13 +188,29 @@ def load_depth_and_create_organized_point_cloud(pcd_filepath, img_filepath, loc_
     return point_cloud, img_filepath, loc_filepath, y_name, y_int
 
 
-def load_depth(pcd_filepath, img_filepath, loc_filepath, y_name, y_int, depth_size, scale=1.0):
+def load_depth(pcd_filepath, img_filepath, loc_filepath, y_name, y_int, depth_size, scale=1.0,
+               data_mean=None, data_std=None):
     # Load loc
     with open(loc_filepath, 'r') as f:
         loc = [int(l) for l in f.read().strip().split(',')]
     # Load depth and convert to float32
     depth = cv2.imread(pcd_filepath.decode('utf-8'), cv2.IMREAD_ANYDEPTH)
     depth = depth.astype(np.float32)
+    # Sample specific data-mean
+    if data_mean < 0:
+        mean = np.mean(depth.reshape(-1), axis=0)
+        depth = depth - mean
+    # Dataset specific data-mean
+    elif data_mean > 0:
+        depth = depth - data_mean
+    # Sample specific data-std
+    if data_std < 0:
+        mean = np.mean(depth.reshape(-1), axis=0)
+        distances = np.abs(depth - mean)
+        distance_max = np.max(distances)
+        depth = np.divide(depth, distance_max)
+    elif data_std > 0:
+        depth = np.divide(depth, data_std)
     # Reshape
     if depth.shape[0] < depth_size:
         pad_size = depth_size - depth.shape[0]
