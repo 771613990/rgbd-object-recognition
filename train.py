@@ -24,6 +24,7 @@ parser.add_argument('--decay_step', type=int, default=200000, help='Decay step f
 parser.add_argument('--decay_rate', type=float, default=0.8, help='Decay rate for lr decay [default: 0.8]')
 parser.add_argument('--tfrecords_path', type=str, help='top level input path where are train/test dirs with tfrecords',
                     required=True)
+parser.add_argument('--pretrained_weights', type=str, help='pretrained weights file for inception_v3', required=False)
 FLAGS = parser.parse_args()
 
 BATCH_SIZE = FLAGS.batch_size
@@ -150,7 +151,7 @@ def train():
         #######################################################################
 
         # Load data
-        data_channels = 1
+        data_channels = 3
         data_height = 299
         data_width = 299
         data_scale = 1.0        # max depth from kinect is 10m, so 0.1 gives us range of 0-1
@@ -163,6 +164,12 @@ def train():
                                                            b['int'], data_height, data_scale, data_mean, data_std],
                                                           [tf.float32, tf.string, tf.string, tf.string, tf.int64]),
                                   num_parallel_calls=4)
+
+        # Tile
+        if data_channels == 3:
+            tfdataset = tfdataset.map(lambda a, b, c, d, e:
+                                      tf.py_func(tfrecord_utils.tile_depth_image, [a, b, c, d, e],
+                                                 [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
 
         # # Augment
         # tfdataset = tfdataset.map(lambda a, b, c, d, e:
@@ -188,7 +195,7 @@ def train():
 
             # Note the global_step=batch parameter to minimize.
             # That tells the optimizer to helpfully increment the 'batch' parameter for you every time it trains.
-            batch = tf.Variable(0)
+            batch = tf.Variable(0, trainable=False)
             bn_decay = get_bn_decay(batch)
             tf.summary.scalar('bn_decay', bn_decay)
 
@@ -201,14 +208,30 @@ def train():
             accuracy = tf.reduce_sum(tf.cast(correct, tf.float32)) / float(BATCH_SIZE)
             tf.summary.scalar('accuracy', accuracy)
 
-            # Get training operator
+            # Get learning rate
             learning_rate = get_learning_rate(batch)
             tf.summary.scalar('learning_rate', learning_rate)
-            if OPTIMIZER == 'momentum':
-                optimizer = tf.train.MomentumOptimizer(learning_rate, momentum=MOMENTUM)
-            elif OPTIMIZER == 'adam':
-                optimizer = tf.train.AdamOptimizer(learning_rate)
-            train_op = optimizer.minimize(loss, global_step=batch)
+
+            # OPTIMIZATION - Also updates batchnorm operations automatically
+            with tf.variable_scope('opt') as scope:
+                if OPTIMIZER == 'momentum':
+                    optimizer = tf.train.MomentumOptimizer(learning_rate, momentum=MOMENTUM)
+                elif OPTIMIZER == 'adam':
+                    optimizer = tf.train.AdamOptimizer(learning_rate)
+                update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)  # for batchnorm
+                with tf.control_dependencies(update_ops):
+                    train_op = optimizer.minimize(loss, global_step=batch)
+
+            # Load weghts from checkpoint
+            if FLAGS.model == 'inception_v3' and FLAGS.pretrained_weights:
+                # Lists of scopes of weights to include/exclude from pretrained snapshot
+                pretrained_include = ["InceptionV3"]
+                pretrained_exclude = ["InceptionV3/AuxLogits", "InceptionV3/Logits"]
+
+                # PRETRAINED SAVER - For loading pretrained weights on the first run
+                pretrained_vars = tf.contrib.framework.get_variables_to_restore(include=pretrained_include,
+                                                                                exclude=pretrained_exclude)
+                tf_pretrained_saver = tf.train.Saver(pretrained_vars, name="pretrained_saver")
 
             # Add ops to save and restore all the variables.
             saver = tf.train.Saver()
@@ -232,8 +255,15 @@ def train():
         # Init variables
         sess.run(tf.global_variables_initializer())
 
+        # print('VARS NO: {}'.format(np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()])))
+        # exit()
+
         # Restore?
         # saver.restore(sess, tf.train.latest_checkpoint('log'))
+
+        if FLAGS.model == 'inception_v3' and FLAGS.pretrained_weights:
+            sess.run(tf.global_variables_initializer())
+            tf_pretrained_saver.restore(sess, FLAGS.pretrained_weights)
 
         ops = {'is_training_pl': is_training_pl, 'pred': pred,
                'loss': loss, 'train_op': train_op, 'merged': merged, 'step': batch,
@@ -280,6 +310,9 @@ def train_one_epoch(sess, ops, train_writer, data_iterator, tfrecord_filepaths_t
                 [ops['merged'], ops['step'], ops['train_op'], ops['loss'], ops['pred'], ops['data_y_int']])
             batch_train_end = timer()
 
+            # Print predited value and label
+            # print('pred_val: {} curr_lab: {}'.format(pred_val[0], current_label[0]))
+
             # Some acc calulation
             train_writer.add_summary(summary, step)
             pred_val = np.argmax(pred_val, 1)
@@ -298,6 +331,7 @@ def train_one_epoch(sess, ops, train_writer, data_iterator, tfrecord_filepaths_t
     except tf.errors.OutOfRangeError:
         pass
     pbar.close()
+    log_string('Mean train accuracy: {:.4f}'.format(total_correct/float(total_seen)))
 
 
 def eval_one_epoch(sess, ops, test_writer, data_iterator, tfrecord_filepaths_test, tfrecord_filepaths_placeholder):
@@ -322,6 +356,8 @@ def eval_one_epoch(sess, ops, test_writer, data_iterator, tfrecord_filepaths_tes
             summary, step, loss_val, pred_val, current_label = sess.run(
                 [ops['merged'], ops['step'], ops['loss'], ops['pred'], ops['data_y_int']])
 
+            # print('pred_val: {} curr_lab: {}'.format(pred_val[0], current_label[0]))
+
             # Some acc calulation
             pred_val = np.argmax(pred_val, 1)
             correct = np.sum(pred_val == current_label)
@@ -344,6 +380,7 @@ def eval_one_epoch(sess, ops, test_writer, data_iterator, tfrecord_filepaths_tes
     except tf.errors.OutOfRangeError:
         pass
     pbar.close()
+    log_string('Mean test accuracy: {:.4f}'.format(total_correct / float(total_seen)))
 
     # Log test accuracy
     summary_log = tf.Summary()
