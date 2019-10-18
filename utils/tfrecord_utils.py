@@ -211,6 +211,9 @@ def load_depth(pcd_filepath, img_filepath, loc_filepath, y_name, y_int, depth_si
         depth = np.divide(depth, distance_max)
     elif data_std > 0:
         depth = np.divide(depth, data_std)
+
+    #print('depth: min: {} max: {} mean: {}'.format(np.min(depth), np.max(depth), np.mean(depth)))
+
     # Reshape
     if depth.shape[0] < depth_size:
         pad_size = depth_size - depth.shape[0]
@@ -241,6 +244,12 @@ def load_depth(pcd_filepath, img_filepath, loc_filepath, y_name, y_int, depth_si
     depth *= scale
     # Return
     return depth, img_filepath, loc_filepath, y_name, y_int
+
+
+def tile_depth_image(depth_image, img_filepath, loc_filepath, y_name, y_int):
+    # Return
+    depth_image = np.tile(np.expand_dims(depth_image, axis=-1), (1, 1, 3))
+    return depth_image, img_filepath, loc_filepath, y_name, y_int
 
 
 def load_depth_in_hha(pcd_filepath, img_filepath, loc_filepath, y_name, y_int, depth_size):

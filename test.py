@@ -31,10 +31,7 @@ sys.path.append(os.path.join(BASE_DIR, 'models', FLAGS.model))
 LOG_DIR = FLAGS.log_dir
 
 # Import and backup model file
-if 'inception' not in FLAGS.model:
-    MODEL = importlib.import_module(FLAGS.model)
-else:
-    import slim.nets.inception_v3 as inception_v3
+MODEL = importlib.import_module(FLAGS.model)
 
 NUM_CLASSES = 51
 
@@ -59,7 +56,7 @@ def train():
         # TFdataset
         tfrecord_filepaths_placeholder = tf.placeholder(tf.string, [None])
         tfdataset = tf.data.TFRecordDataset(tfrecord_filepaths_placeholder)
-        tfdataset = tfdataset.shuffle(buffer_size=BATCH_SIZE*10)
+        # tfdataset = tfdataset.shuffle(buffer_size=BATCH_SIZE*10)
         tfdataset = tfdataset.map(tfrecord_utils.tfexample_to_paths, num_parallel_calls=4)
 
         #######################################################################
@@ -99,17 +96,25 @@ def train():
         #######################################################################
 
         # Load data
-        data_channels = 1
+        data_channels = 3
         data_height = 299
         data_width = 299
         data_scale = 1.0 # max depth from kinect is 10m, so 0.1 gives us range of 0-1
-        data_mean = 775.6092    # None if zero, sample specific if below zero, given value otherwise
-        data_std = 499.1676     # None if zero, sample specific if below zero, given value otherwise
+        # data_mean = 775.6092    # None if zero, sample specific if below zero, given value otherwise
+        # data_std = 499.1676     # None if zero, sample specific if below zero, given value otherwise
+        data_mean = 775.6092 - 499.1676     # To be in the range of 0-1
+        data_std = 499.1676 * 2             # To be in the range of 0-1
         tfdataset = tfdataset.map(lambda a, b: tf.py_func(tfrecord_utils.load_depth,
                                                           [a['pcd_path'], a['img_path'], a['loc_path'], b['name'],
                                                            b['int'], data_height, data_scale, data_mean, data_std],
                                                           [tf.float32, tf.string, tf.string, tf.string, tf.int64]),
                                   num_parallel_calls=4)
+
+        # Tile
+        if data_channels == 3:
+            tfdataset = tfdataset.map(lambda a, b, c, d, e:
+                                      tf.py_func(tfrecord_utils.tile_depth_image, [a, b, c, d, e],
+                                                 [tf.float32, tf.string, tf.string, tf.string, tf.int64]))
 
         # # Augment
         # tfdataset = tfdataset.map(lambda a, b, c, d, e:
@@ -199,6 +204,8 @@ def eval_one_epoch(sess, ops, test_writer, data_iterator, tfrecord_filepaths_tes
             # Train it
             summary, step, loss_val, pred_val, current_label = sess.run(
                 [ops['merged'], ops['step'], ops['loss'], ops['pred'], ops['data_y_int']])
+
+            #print('pred_val: {} curr_lab: {}'.format(pred_val, current_label))
 
             # Some acc calulation
             pred_val = np.argmax(pred_val, 1)
