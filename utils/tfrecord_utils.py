@@ -188,6 +188,45 @@ def load_depth_and_create_organized_point_cloud(pcd_filepath, img_filepath, loc_
     return point_cloud, img_filepath, loc_filepath, y_name, y_int
 
 
+def create_organized_point_cloud(depth_image, depth_image_loc, y_name, y_int, cloud_image_size, zero_mean, unit_ball):
+
+    # Create point cloud
+    point_cloud = create_point_cloud(depth_image, depth_image_loc, flat_output=False)
+    point_cloud = np.nan_to_num(point_cloud)
+    if zero_mean:
+        mean = np.mean(point_cloud.reshape(-1, 3), axis=0)
+        point_cloud = point_cloud - mean
+    if unit_ball:
+        mean = np.mean(point_cloud.reshape(-1, 3), axis=0)
+        distances = np.linalg.norm(point_cloud - mean, axis=-1)
+        distance_max = np.max(distances)
+        point_cloud = np.divide(point_cloud, distance_max)
+    # Reshape
+    if point_cloud.shape[0] < cloud_image_size:
+        pad_size = cloud_image_size - point_cloud.shape[0]
+        pad_1 = np.random.choice(pad_size)
+        pad_2 = pad_size - pad_1
+        point_cloud = np.pad(point_cloud, ((pad_1, pad_2), (0, 0), (0, 0)), 'constant', constant_values=(0.0, 0.0))
+    if point_cloud.shape[0] > cloud_image_size:
+        pad_size = point_cloud.shape[0] - cloud_image_size
+        pad_1 = np.random.choice(pad_size)
+        pad_2 = pad_size - pad_1
+        point_cloud = point_cloud[pad_1:-pad_2]
+    if point_cloud.shape[1] < cloud_image_size:
+        pad_size = cloud_image_size - point_cloud.shape[1]
+        pad_1 = np.random.choice(pad_size)
+        pad_2 = pad_size - pad_1
+        point_cloud = np.pad(point_cloud, ((0, 0), (pad_1, pad_2), (0, 0)), 'constant', constant_values=(0.0, 0.0))
+    if point_cloud.shape[1] > cloud_image_size:
+        pad_size = point_cloud.shape[1] - cloud_image_size
+        pad_1 = np.random.choice(pad_size)
+        pad_2 = pad_size - pad_1
+        point_cloud = point_cloud[:, pad_1:-pad_2]
+    # Return
+    return point_cloud, depth_image_loc, y_name, y_int
+
+
+
 def load_depth(pcd_filepath, img_filepath, loc_filepath, y_name, y_int, depth_size, scale=1.0,
                data_mean=None, data_std=None):
     # Load loc
@@ -378,6 +417,19 @@ def point_cloud_data_to_tfexample(pc_data, label_name, label_int):
     return tf.train.Example(features=tf.train.Features(feature=data))
 
 
+def depth_image_to_tfexample(depth_image, depth_image_loc, label_name, label_int):
+
+    data = {'depth-image/ravel': wrap_floats(depth_image.ravel()),
+            'depth-image/shape0': wrap_int64(depth_image.shape[0]),
+            'depth-image/shape1': wrap_int64(depth_image.shape[1]),
+            'depth-image-loc/x': wrap_int64(depth_image_loc[0]),
+            'depth-image-loc/y': wrap_int64(depth_image_loc[1]),
+            'label/name': wrap_string(label_name.encode('utf-8')),
+            'label/int': wrap_int64(label_int),
+            }
+    return tf.train.Example(features=tf.train.Features(feature=data))
+
+
 def paths_to_tfexample(pc_path, image_path, loc_path, label_name, label_int):
 
     data = {'data/pcd_path': wrap_string(pc_path.encode('utf-8')),
@@ -405,6 +457,27 @@ def tfexample_to_paths(example_proto):
     y = {'name': parsed_features['label/name'],
          'int': parsed_features['label/int']}
 
+    # Return
+    return x, y
+
+
+def tfexample_to_depth_image(example_proto):
+    # Parse single example
+    features = {'depth-image/ravel': tf.FixedLenSequenceFeature([], tf.float32, allow_missing=True),
+                'depth-image/shape0': tf.FixedLenFeature((), tf.int64),
+                'depth-image/shape1': tf.FixedLenFeature((), tf.int64),
+                'depth-image-loc/x': tf.FixedLenFeature((), tf.int64),
+                'depth-image-loc/y': tf.FixedLenFeature((), tf.int64),
+                'label/name': tf.FixedLenFeature((), tf.string),
+                'label/int': tf.FixedLenFeature((), tf.int64),
+                }
+    parsed_features = tf.parse_single_example(example_proto, features)
+    # Reshape data
+    x = {'depth-image' : tf.reshape(parsed_features['depth-image/ravel'], [parsed_features['depth-image/shape0'],
+                                                                           parsed_features['depth-image/shape1']]),
+         'depth-image-loc': [parsed_features['depth-image-loc/x'], parsed_features['depth-image-loc/y']]}
+    y = {'name': parsed_features['label/name'],
+         'int': parsed_features['label/int']}
     # Return
     return x, y
 

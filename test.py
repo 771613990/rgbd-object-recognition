@@ -96,7 +96,7 @@ def train():
         #######################################################################
 
         # Load data
-        data_channels = 3
+        data_channels = 1
         data_height = 299
         data_width = 299
         data_scale = 1.0 # max depth from kinect is 10m, so 0.1 gives us range of 0-1

@@ -7,8 +7,8 @@ def get_model(depth_image, is_training, num_classes, bn_decay=None, with_bn=Fals
     # Block #1
     ###########################################################################
 
-    # Convolutional Layer #1
-    conv1 = tf.layers.conv2d(inputs=depth_image, filters=96, kernel_size=[7, 7], padding="same", activation=None)
+    # Convolutional Layer #1    -   14 208 params
+    conv1 = tf.layers.conv2d(inputs=depth_image, filters=32, kernel_size=7, strides=2, padding="valid", activation=None)
     # Batch norm #1
     if with_bn:
         conv1 = tf.layers.batch_normalization(inputs=conv1, axis=-1, momentum=0.9, epsilon=0.001, center=True,
@@ -16,17 +16,14 @@ def get_model(depth_image, is_training, num_classes, bn_decay=None, with_bn=Fals
     # Activation #1
     conv1 = tf.nn.relu(conv1)
     # Max-pooling #1
-    pool1 = tf.layers.max_pooling2d(inputs=conv1, pool_size=[2, 2], strides=2)
-
-    print(pool1)
-    exit(0)
+    pool1 = tf.layers.max_pooling2d(inputs=conv1, pool_size=3, strides=2)
 
     ###########################################################################
     # Block #2
     ###########################################################################
 
-    # Convolutional Layer #2
-    conv2 = tf.layers.conv2d(inputs=pool1, filters=96, kernel_size=[5, 5], padding="same", activation=None)
+    # Convolutional Layer #2    -   230 496 params
+    conv2 = tf.layers.conv2d(inputs=pool1, filters=64, kernel_size=5, strides=2, padding="same", activation=None)
     # Batch norm #2
     if with_bn:
         conv2 = tf.layers.batch_normalization(inputs=conv2, axis=-1, momentum=0.999, epsilon=0.001, center=True,
@@ -34,15 +31,14 @@ def get_model(depth_image, is_training, num_classes, bn_decay=None, with_bn=Fals
     # Activation #2
     conv2 = tf.nn.relu(conv2)
     # Max-pooling #2
-    pool2 = tf.layers.max_pooling2d(inputs=conv2, pool_size=[2, 2], strides=2)
+    pool2 = tf.layers.max_pooling2d(inputs=conv2, pool_size=3, strides=2)
 
     ###########################################################################
     # Block #3
     ###########################################################################
 
-    # Convolutional Layers #3
-    conv3 = tf.layers.conv2d(inputs=pool2, filters=128, kernel_size=[3, 3], strides=2, padding="same",
-                             activation=None)
+    # Convolutional Layers #3   -   83 040 params
+    conv3 = tf.layers.conv2d(inputs=pool2, filters=96, kernel_size=3, strides=1, padding="same", activation=None)
     # Batch norm #3
     if with_bn:
         conv3 = tf.layers.batch_normalization(inputs=conv3, axis=-1, momentum=0.999, epsilon=0.001, center=True,
@@ -54,9 +50,8 @@ def get_model(depth_image, is_training, num_classes, bn_decay=None, with_bn=Fals
     # Block #4
     ###########################################################################
 
-    # Convolutional Layers #4
-    conv4 = tf.layers.conv2d(inputs=conv3, filters=128, kernel_size=[3, 3], strides=2, padding="same",
-                             activation=None)
+    # Convolutional Layers #4   -   83 040 params
+    conv4 = tf.layers.conv2d(inputs=conv3, filters=96, kernel_size=3, strides=1, padding="same", activation=None)
     # Batch norm #3
     if with_bn:
         conv4 = tf.layers.batch_normalization(inputs=conv4, axis=-1, momentum=0.999, epsilon=0.001, center=True,
@@ -68,9 +63,8 @@ def get_model(depth_image, is_training, num_classes, bn_decay=None, with_bn=Fals
     # Block #5
     ###########################################################################
 
-    # Convolutional Layers #5
-    conv5 = tf.layers.conv2d(inputs=conv4, filters=128, kernel_size=[3, 3], strides=2, padding="same",
-                             activation=None)
+    # Convolutional Layers #5   -   83 040 params
+    conv5 = tf.layers.conv2d(inputs=conv4, filters=64, kernel_size=3, strides=1, padding="same", activation=None)
     # Batch norm #5
     if with_bn:
         conv5 = tf.layers.batch_normalization(inputs=conv5, axis=-1, momentum=0.999, epsilon=0.001, center=True,
@@ -78,7 +72,7 @@ def get_model(depth_image, is_training, num_classes, bn_decay=None, with_bn=Fals
     # Activation #5
     conv5 = tf.nn.relu(conv5)
     # Max-pooling #5
-    pool5 = tf.layers.max_pooling2d(inputs=conv5, pool_size=[2, 2], strides=2)
+    pool5 = tf.layers.max_pooling2d(inputs=conv5, pool_size=3, strides=2)
 
     ###########################################################################
     # Dense #1
@@ -87,7 +81,7 @@ def get_model(depth_image, is_training, num_classes, bn_decay=None, with_bn=Fals
     # Flat layer
     pool5_flat = tf.layers.flatten(pool5)
     # Dense layer #6
-    dense6 = tf.layers.dense(inputs=pool5_flat, units=1024, activation=None)
+    dense6 = tf.layers.dense(inputs=pool5_flat, units=512, activation=None)
     # Batch norm #6
     if with_bn:
         dense6 = tf.layers.batch_normalization(inputs=dense6, axis=-1, momentum=0.999, epsilon=0.001, center=True,
@@ -95,14 +89,14 @@ def get_model(depth_image, is_training, num_classes, bn_decay=None, with_bn=Fals
     # Activation #6
     dense6 = tf.nn.relu(dense6)
     # Dropout #6
-    dropout6 = tf.layers.dropout(inputs=dense6, rate=0.4)
+    dropout6 = tf.layers.dropout(inputs=dense6, rate=0.5)
 
     ###########################################################################
     # Dense #1
     ###########################################################################
 
     # Dense layer #7
-    dense7 = tf.layers.dense(inputs=dropout6, units=512, activation=None)
+    dense7 = tf.layers.dense(inputs=dropout6, units=128, activation=None)
     # Batch norm #7
     if with_bn:
         dense7 = tf.layers.batch_normalization(inputs=dense7, axis=-1, momentum=0.999, epsilon=0.001, center=True,
@@ -110,7 +104,7 @@ def get_model(depth_image, is_training, num_classes, bn_decay=None, with_bn=Fals
     # Activation #7
     dense7 = tf.nn.relu(dense7)
     # Dropout #7
-    dropout7 = tf.layers.dropout(inputs=dense7, rate=0.4)
+    dropout7 = tf.layers.dropout(inputs=dense7, rate=0.5)
 
     ###########################################################################
     # Dense #3
